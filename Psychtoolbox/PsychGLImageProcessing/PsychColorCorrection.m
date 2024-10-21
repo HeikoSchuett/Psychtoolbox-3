@@ -1437,6 +1437,7 @@ if strcmpi(cmd, 'SetNormalizedLookupTable')
         ICMPostscale = varargin{6};
     end
     % scale clut
+    clut_max = max(max(clut));
     clut = clut ./ ICMPostscale;
 
     % Retrieve all params for 'win'dow and our 'LookupTable' icmSpec, bind shader.
@@ -1445,7 +1446,7 @@ if strcmpi(cmd, 'SetNormalizedLookupTable')
 
     try
         % Setup initial clamping values to valid range 0.0 - maximum in passed CLUT:
-        glUniform2f(glGetUniformLocation(glsl, 'ICMClampToColorRange'), 0.0, max(max(clut)));
+        glUniform2f(glGetUniformLocation(glsl, 'ICMClampToColorRange'), 0.0, clut_max);
 
         % Setup max input value prescaler and postscaler:
         glUniform1f(glGetUniformLocation(glsl, 'ICMMaxInputValue'),ICMMaxInputValue);
@@ -1470,7 +1471,7 @@ if strcmpi(cmd, 'SetNormalizedLookupTable')
     winfo = Screen('GetWindowInfo', win);
     if winfo.GLSupportsTexturesUpToBpc >= 32
         % Full 32 bits single precision float:
-        internalFormat = GL.LUMINANCE_FLOAT32_APPLE;
+        internalFormat = GL.LUMINANCE32F_ARB;
         if verbosity >= 3, fprintf('PsychColorCorrection: Using a 32 bit float CLUT -> 23 bits effective linear output precision for color correction.\n'); end
     else
         % No float32 textures:
@@ -1514,8 +1515,8 @@ if strcmpi(cmd, 'SetNormalizedLookupTable')
     % at all. We'll do our own linear filtering in the ICM shader. This way
     % we can provide accelerated linear interpolation on all GPU's with all
     % texture formats, even if GPU's are old:
-    glTexParameteri(GL.TEXTURE_RECTANGLE_EXT, GL.TEXTURE_MIN_FILTER, GL.NEAREST);
-    glTexParameteri(GL.TEXTURE_RECTANGLE_EXT, GL.TEXTURE_MAG_FILTER, GL.NEAREST);
+    glTexParameteri(GL.TEXTURE_RECTANGLE_EXT, GL.TEXTURE_MIN_FILTER, GL.LINEAR);
+    glTexParameteri(GL.TEXTURE_RECTANGLE_EXT, GL.TEXTURE_MAG_FILTER, GL.LINEAR);
 
     % Want clamp-to-edge behaviour to saturate at minimum and maximum
     % intensity value, and to make sure that a pure-luminance 1 row clut is

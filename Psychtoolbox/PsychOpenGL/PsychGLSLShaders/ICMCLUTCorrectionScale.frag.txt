@@ -32,21 +32,13 @@ vec4 icmTransformColor(vec4 incolor)
 
     /* Remap them to index in resolution range: */
     incolor.rgb = incolor.rgb * ICMPrescale;
-    incolor1 = floor(incolor.rgb) + 0.5;
-    incolor2 = incolor1 + 1.0;
 
-    /* Lookup values for each channel in rows of texture: Perform linear */
-    /* filtering manual by dual-lookup and mix. This way we work on old hw as well: */
-    lutcolor1.r  = texture2DRect(ICMCLUT, vec2(incolor1.r, 0.5)).r;
-    lutcolor2.r  = texture2DRect(ICMCLUT, vec2(incolor2.r, 0.5)).r;
+    /* Lookup values for each channel in rows of texture: */
+    outcolor.r  = texture2DRect(ICMCLUT, vec2(incolor.r, 0.5)).r;
+    outcolor.g  = texture2DRect(ICMCLUT, vec2(incolor.g, 1.5)).r;
+    outcolor.b  = texture2DRect(ICMCLUT, vec2(incolor.b, 2.5)).r;
 
-    lutcolor1.g  = texture2DRect(ICMCLUT, vec2(incolor1.g, 1.5)).r;
-    lutcolor2.g  = texture2DRect(ICMCLUT, vec2(incolor2.g, 1.5)).r;
-
-    lutcolor1.b  = texture2DRect(ICMCLUT, vec2(incolor1.b, 2.5)).r;
-    lutcolor2.b  = texture2DRect(ICMCLUT, vec2(incolor2.b, 2.5)).r;
-
-    outcolor.rgb = ICMPostscale * mix(lutcolor1, lutcolor2, fract(incolor.rgb));
+    outcolor.rgb = ICMPostscale * outcolor.rgb;
 
     /* Clamp outcolor to range given by ICMClampToColorRange: */
     outcolor.rgb = clamp(outcolor.rgb, vec3(ICMClampToColorRange[0]), vec3(ICMClampToColorRange[1]));
