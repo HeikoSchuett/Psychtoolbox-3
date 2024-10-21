@@ -1,12 +1,12 @@
 function varargout = PsychColorCorrection(cmd, varargin)
 % varargout = PsychColorCorrection(cmd, varargin)
 %
-% This function is used to setup and control the built-in color correction 
+% This function is used to setup and control the built-in color correction
 % and transformation mechanisms of PTB's imaging pipeline. It allows to choose
 % among different methods of color correction (for calibrated output of
 % stimuli) and to change parameters of the chosen method. This only works
 % when the imaging pipeline is enabled and with certain output devices.
-% 
+%
 % This functions are mostly meant to provide fast color correction, e.g.,
 % gamma correction, when PTB is used with special high precision / HDR
 % output devices, e.g., CRS Bits++ in Mono++ or Color++ mode, or video
@@ -72,7 +72,7 @@ function varargout = PsychColorCorrection(cmd, varargin)
 %
 % 'methodname' is the name string of one of the supported methods:
 %
-% * 'None': Don't do anything. Fastest, but not safest. 
+% * 'None': Don't do anything. Fastest, but not safest.
 %
 %   If your stimulus contains (by accident) color or luminance values outside
 %   the displayable range, the corresponding pixels may show undefined output
@@ -152,6 +152,12 @@ function varargout = PsychColorCorrection(cmd, varargin)
 %   lookup corresponding corrected color values for given framebuffer input
 %   values.
 %
+%
+% * 'NormalizedLookupTable' : Apply color correction by a normalized
+%    color table lookup, ie. a CLUT.
+%
+%   This works as the normal lookup table, but adds a postscaling factor
+%   such that the values inside the CLUT can all stay between 0 and 1
 %
 % * 'LookupTable3D' : Apply color correction by a 3D color table lookup.
 %
@@ -409,7 +415,7 @@ function varargout = PsychColorCorrection(cmd, varargin)
 % - Set gain matrix for method 'GainMatrix'.
 % If matrix is a 2D matrix, the gain will be applied to all color
 % channels equally. If matrix is a 3D matrix, matrix(y,x,1) will define
-% the red channel gain, matrix(y,x,2) will define the green channel gain, 
+% the red channel gain, matrix(y,x,2) will define the green channel gain,
 % and matrix(y,x,3) will define the blue channel gain.
 %
 % The optional 'precision' parameter defines the numerical precision with
@@ -495,11 +501,11 @@ end
 if nargin < 1
     error('Subcommand specification missing!');
 end
-        
+
 if isempty(cmd)
     error('Subcommand specification missing!');
 end
-       
+
 % Subcommand dispatch:
 
 if strcmpi(cmd, 'ChooseColorCorrection')
@@ -507,21 +513,21 @@ if strcmpi(cmd, 'ChooseColorCorrection')
     if nargin < 2
         error('You must specify a color-correction method!');
     end
-    
+
     % Assign method, that's it...
     icmSpec.type = varargin{1};
     specReady = 1;
-    
+
     return;
 end
 
 if strcmpi(cmd, 'Verbosity')
     varargout{1} = verbosity;
-    
+
     if nargin == 2
         verbosity = varargin{1};
     end
-    
+
     return;
 end
 
@@ -532,13 +538,13 @@ if strcmpi(cmd, 'GetCompiledShaders')
     if ~specReady
         error('"GetCompiledShaders" called, but specification of what to compile is unavailable!');
     end
-    
+
     if nargin >= 3
         debuglevel = varargin{2};
     else
         debuglevel = 0;
     end
-    
+
     % Need GL from here on...
     if isempty(GL)
         InitializeMatlabOpenGL([], [], 1);
@@ -546,7 +552,7 @@ if strcmpi(cmd, 'GetCompiledShaders')
 
     % No config string by default:
     icmConfig = '';
-    
+
     % No override main routine by default:
     icmOverrideMain = '';
 
@@ -572,23 +578,23 @@ if strcmpi(cmd, 'GetCompiledShaders')
             icmShaders = LoadShaderFromFile('ICMCheckedPassThroughShader.frag.txt', [], debuglevel);
             icmIdString = sprintf('ICM:%s', icmSpec.type);
 
-        % Simple power-law bog-standard gamma correction.
+            % Simple power-law bog-standard gamma correction.
         case {'SimpleGamma'}
             % Load our bog-standard power-law shader:
             icmShaders = LoadShaderFromFile('ICMSimpleGammaCorrectionShader.frag.txt', [], debuglevel);
             icmIdString = sprintf('ICM:%s', icmSpec.type);
-            
+
         case {'MatrixMultiply4', 'SensorToPrimary'}
             % Load our matrix multiply shader:
             icmShaders = LoadShaderFromFile('ICMMatrixMult4Shader.frag.txt', [], debuglevel);
             icmIdString = sprintf('ICM:%s', icmSpec.type);
-            
+
         case {'xyYToXYZ'}
             % Load our xyYToXYZ colorspace conversion shader:
             icmShaders = LoadShaderFromFile('ICMConvert_xyYToXYZ_Shader.frag.txt', [], debuglevel);
             icmIdString = sprintf('ICM:%s', icmSpec.type);
-            
-        % Color correction by CLUT texture lookup table operation:
+
+            % Color correction by CLUT texture lookup table operation:
         case {'LookupTable'}
             % Load our 1D CLUT color correction shader:
             icmShaders = LoadShaderFromFile('ICMCLUTCorrectionShader.frag.txt', [], debuglevel);
@@ -596,11 +602,22 @@ if strcmpi(cmd, 'GetCompiledShaders')
 
             % Generate texture handle for fillout later on:
             icmSpec.icmlutid = glGenTextures(1);
-            
+
             % Build config string to bind and use our CLUT texture:
             icmConfig = sprintf('TEXTURERECT2D(2)=%i', icmSpec.icmlutid);
-            
-        % Color correction by indexing into 3D texture lookup table:
+
+        case {'NormalizedLookupTable'}
+            % Load our 1D CLUT color correction shader:
+            icmShaders = LoadShaderFromFile('ICMCLUTCorrectionScale.frag.txt', [], debuglevel);
+            icmIdString = sprintf('ICM:%s', icmSpec.type);
+
+            % Generate texture handle for fillout later on:
+            icmSpec.icmlutid = glGenTextures(1);
+
+            % Build config string to bind and use our CLUT texture:
+            icmConfig = sprintf('TEXTURERECT2D(2)=%i', icmSpec.icmlutid);
+
+            % Color correction by indexing into 3D texture lookup table:
         case {'LookupTable3D'}
             % Load our 3D CLUT color correction shader:
             icmShaders = LoadShaderFromFile('ICM3DCLUTCorrectionShader.frag.txt', [], debuglevel);
@@ -608,11 +625,11 @@ if strcmpi(cmd, 'GetCompiledShaders')
 
             % Generate texture handle for fillout later on:
             icmSpec.icmlutid = glGenTextures(1);
-            
+
             % Build config string to bind and use our CLUT 3D texture:
             icmConfig = sprintf('TEXTURE3D(2)=%i', icmSpec.icmlutid);
 
-        % Vignetting correction by lookup into a 2D per-pixel gain texture:
+            % Vignetting correction by lookup into a 2D per-pixel gain texture:
         case {'GainMatrix'}
             % Load our 2D gain correction shader:
             icmShaders = LoadShaderFromFile('ICM2DGainCorrectionShader.frag.txt', [], debuglevel);
@@ -620,20 +637,20 @@ if strcmpi(cmd, 'GetCompiledShaders')
 
             % Generate texture handle for fillout later on:
             icmSpec.icmlutid = glGenTextures(1);
-            
+
             % Build config string to bind and use our gain texture:
             icmConfig = sprintf('TEXTURERECT2D(2)=%i', icmSpec.icmlutid);
-            
+
         case {'AnaglyphStereo'}
             % Load the single-view anaglyph shader:
             icmShaders = LoadShaderFromFile('ColoredSingleChannelAnaglyphShader.frag.txt', [], debuglevel);
             icmIdString = sprintf('ICM:%s', icmSpec.type);
-            
+
         otherwise
             error('Unknown type of color correction requested! Internal bug?!?');
     end
-    
-    
+
+
     % Return Vector of shader handles:
     varargout{1} = icmShaders;
 
@@ -642,10 +659,10 @@ if strcmpi(cmd, 'GetCompiledShaders')
 
     % Return shader config string:
     varargout{3} = icmConfig;
-    
+
     % Return override main function definition string:
     varargout{4} = icmOverrideMain;
-    
+
     return;
 end
 
@@ -653,27 +670,27 @@ if strcmpi(cmd, 'ApplyPostGLSLLinkSetup')
     if ~specReady
         error('"ApplyPostGLSLLinkSetup" called, but specification of what to postlink is unavailable!');
     end
-    
+
     % Need GL from here on...
     if isempty(GL)
         error('No GL struct defined in "ApplyPostGLSLLinkSetup"?!? This is a bug - Check code!!');
     end
-    
+
     if nargin < 3
         error('Must provide window handle to onscreen window as 2nd argument and viewId as 3rd one!');
     end
-    
+
     % Fetch window handle:
     win = varargin{1};
     viewId = varargin{2};
-    
+
     % Retrieve all params for 'win'dow and given icmSpec, bind shader:
     [slot shaderid blittercfg voidptr glsl luttexid] = GetSlotForTypeAndBind(win, icmSpec.type, viewId); %#ok<*ASGLU,NASGU>
-    
+
     try
         % Setup initial clamping values to valid range 0.0 - 1.0:
         glUniform2f(glGetUniformLocation(glsl, 'ICMClampToColorRange'), 0.0, 1.0);
-        
+
         switch(icmSpec.type)
             case {'ClampOnly', 'CheckOnly', 'None', 'ClampedNoName'}
                 % Nothing to do yet...
@@ -689,7 +706,7 @@ if strcmpi(cmd, 'ApplyPostGLSLLinkSetup')
                 glUniform3f(glGetUniformLocation(glsl, 'ICMOutputGain'), 1.0, 1.0, 1.0);
                 % Default bias to is 0.0:
                 glUniform3f(glGetUniformLocation(glsl, 'ICMOutputBias'), 0.0, 0.0, 0.0);
-                
+
             case {'LookupTable'}
                 % Set CLUT texture unit to 2:
                 glUniform1i(glGetUniformLocation(glsl, 'ICMCLUT'), 2);
@@ -703,7 +720,22 @@ if strcmpi(cmd, 'ApplyPostGLSLLinkSetup')
                 % store the texture id of the clut texture in a permanent
                 % location though:
                 icmDataForHandle(win, glsl) = icmSpec.icmlutid;
-                
+
+            case {'NormalizedLookupTable'}
+                % Set CLUT texture unit to 2:
+                glUniform1i(glGetUniformLocation(glsl, 'ICMCLUT'), 2);
+                % Setup everything to a pretty meaningless but safe
+                % mapping, which will likely just produce all-white,
+                % regardless of input:
+                glUniform1f(glGetUniformLocation(glsl, 'ICMPrescale'), 1.0);
+                glUniform1f(glGetUniformLocation(glsl, 'ICMPostscale'), 1.0);
+                glUniform1f(glGetUniformLocation(glsl, 'ICMMaxInputValue'), 1.0);
+                % Note that we won't setup the CLUT texture yet. This is a
+                % mandatory step after initial setup of the display. We do
+                % store the texture id of the clut texture in a permanent
+                % location though:
+                icmDataForHandle(win, glsl) = icmSpec.icmlutid;
+
             case {'LookupTable3D'}
                 % Set CLUT texture unit to 2:
                 glUniform1i(glGetUniformLocation(glsl, 'ICMCLUT'), 2);
@@ -717,7 +749,7 @@ if strcmpi(cmd, 'ApplyPostGLSLLinkSetup')
                 % store the texture id of the clut texture in a permanent
                 % location though:
                 icmDataForHandle(win, glsl) = icmSpec.icmlutid;
-                
+
             case {'GainMatrix'}
                 % Set Gain matrix texture unit to 2:
                 glUniform1i(glGetUniformLocation(glsl, 'ICMGainField'), 2);
@@ -739,7 +771,7 @@ if strcmpi(cmd, 'ApplyPostGLSLLinkSetup')
 
             case {'xyYToXYZ'}
                 % Nothing to do for xyYToXYZ colorspace conversion shader.
-                
+
             otherwise
                 error('Unknown type of color correction requested! Internal bug?!?');
         end
@@ -747,20 +779,20 @@ if strcmpi(cmd, 'ApplyPostGLSLLinkSetup')
         % Empty...
         psychrethrow(psychlasterror);
     end
-    
+
     % Unbind shader:
     glUseProgram(0);
-    
+
     return;
 end
 
 if strcmpi(cmd, 'SetColorClampingRange')
-    
+
     % Need GL from here on...
     if isempty(GL)
         error('No internal GL struct defined in "SetColorClampingRange" routine?!? This is a bug - Check code!!');
     end
-    
+
     if nargin < 2
         error('Must provide window handle to onscreen window as 2nd argument!');
     end
@@ -768,18 +800,18 @@ if strcmpi(cmd, 'SetColorClampingRange')
     if nargin < 4
         error('Must provide minimum and maximum allowable value in 3rd and 4th argument!');
     end
-    
+
     % Fetch window handle:
     win = varargin{1};
-    
+
     % Fetch values:
     minc = varargin{2};
     maxc = varargin{3};
-    
+
     if ~isnumeric(minc) || ~isnumeric(maxc)
         error('(min, max) values must be numbers!');
     end
-    
+
     if minc > maxc
         error('Provided minimum value greater than maximum value - This will not work!');
     end
@@ -789,34 +821,34 @@ if strcmpi(cmd, 'SetColorClampingRange')
     else
         viewId = varargin{4};
     end
-    
+
     % Retrieve all params for 'win'dow and given icmSpec, bind shader. The
     % 'icmSpec' string is empty - This will expand into the general 'ICM:'
     % string, so we use the first slot/shader with the ICM: token.
     icmId = '';
     [slot shaderid blittercfg voidptr glsl luttexid] = GetSlotForTypeAndBind(win, icmId, viewId); %#ok<NASGU>
-    
+
     try
         % Setup clamping values to given range:
-        glUniform2f(glGetUniformLocation(glsl, 'ICMClampToColorRange'), minc, maxc);        
+        glUniform2f(glGetUniformLocation(glsl, 'ICMClampToColorRange'), minc, maxc);
     catch
         % Empty...
         psychrethrow(psychlasterror);
     end
-    
+
     % Unbind shader:
     glUseProgram(0);
-    
+
     return;
 end
 
 if strcmpi(cmd, 'SetEncodingGamma')
-    
+
     % Need GL from here on...
     if isempty(GL)
         error('No internal GL struct defined in "SetEncodingGamma" routine?!? This is a bug - Check code!!');
     end
-    
+
     if nargin < 2
         error('Must provide window handle to onscreen window as 2nd argument!');
     end
@@ -824,21 +856,21 @@ if strcmpi(cmd, 'SetEncodingGamma')
     if nargin < 3
         error('Must provide encoding gamma value or vector of 3 encoding gammas for R,G,B in 3rd argument!');
     end
-    
+
     % Fetch window handle:
     win = varargin{1};
-    
+
     % Fetch values:
     gammas = varargin{2};
-    
+
     if ~isnumeric(gammas)
         error('Power law encoding gamma value(s) must be number(s)!');
     end
-    
+
     if length(gammas)~=1 && length(gammas)~=3
         error('Encoding gamma must be a single scalar or a 3 component vector of separate gammas for the Red, Green and Blue color channel!');
     end
-    
+
     if any(min(gammas) < 0) || any(max(gammas) > 1)
         warning(sprintf('At least one of the encoding gamma values %f is outside the sensible range 0.0 - 1.0.\nThis will result in undefined behaviour and is likely not what you want.', gammas)); %#ok<WNTAG,SPWRN>
     end
@@ -847,19 +879,19 @@ if strcmpi(cmd, 'SetEncodingGamma')
         % Replicate to all three channels:
         gammas = [gammas, gammas, gammas];
     end
-    
+
     if nargin < 4
         viewId = [];
     else
         viewId = varargin{3};
     end
-    
+
     % Retrieve all params for 'win'dow and given icmSpec, bind shader. The
     % 'icmSpec' string is empty - This will expand into the general 'ICM:'
     % string, so we use the first slot/shader with the ICM: token.
     icmId = 'SimpleGamma';
     [slot shaderid blittercfg voidptr glsl luttexid] = GetSlotForTypeAndBind(win, icmId, viewId); %#ok<NASGU>
-    
+
     try
         % Set encoding gamma for power-law shader:
         uloc = glGetUniformLocation(glsl, 'ICMEncodingGamma');
@@ -872,20 +904,20 @@ if strcmpi(cmd, 'SetEncodingGamma')
         % Empty...
         psychrethrow(psychlasterror);
     end
-    
+
     % Unbind shader:
     glUseProgram(0);
-    
+
     return;
 end
 
 if strcmpi(cmd, 'SetExtendedGammaParameters')
-    
+
     % Need GL from here on...
     if isempty(GL)
         error('No internal GL struct defined in "SetExtendedGammaParameters" routine?!? This is a bug - Check code!!');
     end
-    
+
     if nargin < 2
         error('Must provide window handle to onscreen window as 2nd argument!');
     end
@@ -908,80 +940,80 @@ if strcmpi(cmd, 'SetExtendedGammaParameters')
 
     % Fetch window handle:
     win = varargin{1};
-    
+
     % Fetch values:
     minL = varargin{2};
-    
+
     if ~isnumeric(minL)
         error('Minimum input intensity value(s) must be number(s)!');
     end
-    
+
     if length(minL)~=1 && length(minL)~=3
         error('Minimum input intensity value must be a single scalar or a 3 component vector of separate values for the Red, Green and Blue color channel!');
     end
-    
+
 
     if length(minL) == 1
         % Replicate to all three channels:
         minL = [minL, minL, minL];
     end
-    
+
     % Fetch values:
     maxL = varargin{3};
-    
+
     if ~isnumeric(maxL)
         error('Maximum input intensity value(s) must be number(s)!');
     end
-    
+
     if length(maxL)~=1 && length(maxL)~=3
         error('Maximum input intensity value must be a single scalar or a 3 component vector of separate values for the Red, Green and Blue color channel!');
     end
-    
+
 
     if length(maxL) == 1
         % Replicate to all three channels:
         maxL = [maxL, maxL, maxL];
     end
-    
+
     % Sanity check:
     if any((maxL - minL) <= 0)
         warning(sprintf('In at least one of the components of the provided minimum and maximum intensity vectors the provided\nminimum is *bigger or equal* than/to the maximum!\nThis will result in undefined behaviour and is likely not what you want.')); %#ok<WNTAG,SPWRN>
     end
-    
+
     % Compute reciprocal:
     recL = 1 ./ abs(maxL - minL);
-    
+
     gain = varargin{4};
-    
+
     if ~isnumeric(gain)
         error('Output gain value(s) must be number(s)!');
     end
-    
+
     if length(gain)~=1 && length(gain)~=3
         error('Output gain value must be a single scalar or a 3 component vector of separate values for the Red, Green and Blue color channel!');
     end
-    
+
 
     if length(gain) == 1
         % Replicate to all three channels:
         gain = [gain, gain, gain];
     end
-    
+
     % Sanity check:
     if any(gain <= 0)
         warning(sprintf('At least one of the components of the provided gain vector is negative or zero!\nThis will result in undefined behaviour and is likely not what you want.')); %#ok<WNTAG,SPWRN>
     end
 
     obias = varargin{5};
-    
+
     if ~isnumeric(obias)
         error('Output bias value(s) must be number(s)!');
     end
-    
+
     if length(obias)~=1 && length(obias)~=3
         error('Output bias value must be a single scalar or a 3 component vector of separate values for the Red, Green and Blue color channel!');
     end
-    
+
 
     if length(obias) == 1
         % Replicate to all three channels:
@@ -993,13 +1025,13 @@ if strcmpi(cmd, 'SetExtendedGammaParameters')
     else
         viewId = varargin{6};
     end
-    
+
     % Retrieve all params for 'win'dow and given icmSpec, bind shader. The
     % 'icmSpec' string is empty - This will expand into the general 'ICM:'
     % string, so we use the first slot/shader with the ICM: token.
     icmId = 'SimpleGamma';
     [slot shaderid blittercfg voidptr glsl luttexid] = GetSlotForTypeAndBind(win, icmId, viewId); %#ok<NASGU>
-    
+
     try
         % Set parameters for power-law shader:
         uloc = glGetUniformLocation(glsl, 'ICMMinInLuminance');
@@ -1008,21 +1040,21 @@ if strcmpi(cmd, 'SetExtendedGammaParameters')
         else
             error('Tried to set extended gamma parameters for color correction, but color correction not configured for use of extended gamma!');
         end
-        
+
         uloc = glGetUniformLocation(glsl, 'ICMMaxInLuminance');
         if uloc >= 0
             glUniform3f(uloc, maxL(1), maxL(2), maxL(3));
         else
             error('Tried to set extended gamma parameters for color correction, but color correction not configured for use of extended gamma!');
         end
-        
+
         uloc = glGetUniformLocation(glsl, 'ICMReciprocalLuminanceRange');
         if uloc >= 0
             glUniform3f(uloc, recL(1), recL(2), recL(3));
         else
             error('Tried to set extended gamma parameters for color correction, but color correction not configured for use of extended gamma!');
         end
-        
+
         uloc = glGetUniformLocation(glsl, 'ICMOutputGain');
         if uloc >= 0
             glUniform3f(uloc, gain(1), gain(2), gain(3));
@@ -1041,10 +1073,10 @@ if strcmpi(cmd, 'SetExtendedGammaParameters')
         % Empty...
         psychrethrow(psychlasterror);
     end
-    
+
     % Unbind shader:
     glUseProgram(0);
-    
+
     return;
 end
 
@@ -1053,7 +1085,7 @@ if strcmpi(cmd, 'SetMultMatrix4')
     if isempty(GL)
         error('SetMultMatrix4: No internal GL struct defined in "SetMultMatrix4" routine?!? This is a bug - Check code!!');
     end
-    
+
     if nargin < 2
         error('SetMultMatrix4: Must provide window handle to onscreen window as 2nd argument!');
     end
@@ -1061,17 +1093,17 @@ if strcmpi(cmd, 'SetMultMatrix4')
     if nargin < 3
         error('SetMultMatrix4: Must provide 4-by-4 color transformation matrix.');
     end
-    
+
     % Fetch window handle:
     win = varargin{1};
-    
+
     % Fetch matrix:
     mat = varargin{2};
-    
+
     if ~isnumeric(mat)
         error('SetMultMatrix4: Matrix must contain numbers!');
     end
-    
+
     if size(mat,1)~=4 || size(mat,2)~=4
         error('SetMultMatrix4: Matrix must have 4 rows and 4 columns!');
     end
@@ -1084,7 +1116,7 @@ if strcmpi(cmd, 'SetMultMatrix4')
 
     icmId = 'MatrixMultiply4';
     [slot shaderid blittercfg voidptr glsl luttexid] = GetSlotForTypeAndBind(win, icmId, viewId); %#ok<NASGU>
-    
+
     try
         % Set 4x4 transform matrix to identity matrix by default:
         glUniformMatrix4fv(glGetUniformLocation(glsl, 'M'), 1, 0, single(mat));
@@ -1092,7 +1124,7 @@ if strcmpi(cmd, 'SetMultMatrix4')
         % Empty...
         psychrethrow(psychlasterror);
     end
-    
+
     % Unbind shader:
     glUseProgram(0);
 
@@ -1104,7 +1136,7 @@ if strcmpi(cmd, 'SetSensorToPrimary')
     if isempty(GL)
         error('SetSensorToPrimary: No internal GL struct defined in "SetSensorToPrimary" routine?!? This is a bug - Check code!!');
     end
-    
+
     if nargin < 2
         error('SetSensorToPrimary: Must provide window handle to onscreen window as 2nd argument!');
     end
@@ -1112,35 +1144,35 @@ if strcmpi(cmd, 'SetSensorToPrimary')
     if nargin < 3
         error('SetSensorToPrimary: Must provide ''cal'' struct, just as for M-Function ''SensorToPrimary''.');
     end
-    
+
     % Fetch window handle:
     win = varargin{1};
-    
+
     % Fetch calibration struct:
     cal = varargin{2};
-    
+
     if ~isstruct(cal)
         error('SetSensorToPrimary: ''cal'' parameter must be a calibration struct, just as for M-Function ''SensorToPrimary''.');
     end
-    
+
     if ~isfield(cal, 'M_linear_device') || ~isfield(cal, 'ambient_linear')
         error('SetSensorToPrimary: ''cal'' struct is missing at least one of the required M_linear_device or ambient_linear fields.');
     end
-    
+
     % Extract the info we need and validate further (see SensorToPrimary for reference):
     M_linear_device = cal.M_linear_device;
     ambient_linear  = cal.ambient_linear;
-    
+
     if isempty(M_linear_device) || isempty(ambient_linear) || ~isnumeric(M_linear_device) || ~isnumeric(ambient_linear)
         error('SetSensorToPrimary has not been called on valid fields M_linear_device and ambient_linear in calibration structure.');
     end
-    
+
     % Ambient corrections
     [ma,na] = size(ambient_linear);
     if (ma ~= 3) || (na ~= 1)
         error('SetSensorToPrimary: Incorrect dimensions for ambient_linear. Must be a 3 element column vector.');
     end
-    
+
     % Color space conversion
     [mm,nm] = size(M_linear_device);
     if (mm ~= 3) || (nm ~= 3)
@@ -1164,17 +1196,17 @@ if strcmpi(cmd, 'SetSensorToPrimary')
     %
     % This way the shader just needs to multiply our final matrix with the
     % input color vector.
-    
+
     % Build constC:
     constC = M_linear_device * ambient_linear;
-    
+
     % Build mother 4 x 4 matrix:
     mat = eye(4); % Start off as identity 4x4 matrix.
     mat(1:3, 1:3) = M_linear_device; % Embed upper 3x3 color matrix.
     mat(1:3,   4) = -constC; % Embed -constC 3 element vector.
-    
+
     % mat is all we need (and love of course).
-    
+
     if nargin < 4
         viewId = [];
     else
@@ -1183,7 +1215,7 @@ if strcmpi(cmd, 'SetSensorToPrimary')
 
     icmId = 'SensorToPrimary';
     [slot shaderid blittercfg voidptr glsl luttexid] = GetSlotForTypeAndBind(win, icmId, viewId); %#ok<NASGU>
-    
+
     try
         % Set 4x4 transform matrix to identity matrix by default:
         glUniformMatrix4fv(glGetUniformLocation(glsl, 'M'), 1, 0, single(mat));
@@ -1191,20 +1223,20 @@ if strcmpi(cmd, 'SetSensorToPrimary')
         % Empty...
         psychrethrow(psychlasterror);
     end
-    
+
     % Unbind shader:
     glUseProgram(0);
 
-    return;    
+    return;
 end
 
 if strcmpi(cmd, 'SetLookupTable')
-    
+
     % Need GL from here on...
     if isempty(GL)
         error('SetLookupTable: No internal GL struct defined in "SetLookupTable" routine?!? This is a bug - Check code!!');
     end
-    
+
     if nargin < 2
         error('SetLookupTable: Must provide window handle to onscreen window as 2nd argument!');
     end
@@ -1212,17 +1244,17 @@ if strcmpi(cmd, 'SetLookupTable')
     if nargin < 3
         error('SetLookupTable: Must provide CLUT matrix for which a color lookup table should be built!');
     end
-    
+
     % Fetch window handle:
     win = varargin{1};
-    
+
     % Fetch clut:
     clut = varargin{2};
-    
+
     if ~isnumeric(clut)
         error('SetLookupTable: CLUT matrix must contain number(s)!');
     end
-    
+
     if size(clut,2)~=1 && size(clut,2)~=3
         error('SetLookupTable: Encoding CLUT must be a one column luminance vector or three column matrix for the Red, Green and Blue color channel!');
     end
@@ -1236,7 +1268,7 @@ if strcmpi(cmd, 'SetLookupTable')
     else
         viewId = varargin{3};
     end
-    
+
     % Optional max input value provided? Assign most common 1.0 if not:
     if nargin < 5 || isempty(varargin{4})
         ICMMaxInputValue = 1.0;
@@ -1255,29 +1287,29 @@ if strcmpi(cmd, 'SetLookupTable')
     % Retrieve all params for 'win'dow and our 'LookupTable' icmSpec, bind shader.
     icmId = 'LookupTable';
     [slot shaderid blittercfg voidptr glsl luttexid] = GetSlotForTypeAndBind(win, icmId, viewId); %#ok<NASGU>
-    
+
     try
         % Setup initial clamping values to valid range 0.0 - maximum in passed CLUT:
         glUniform2f(glGetUniformLocation(glsl, 'ICMClampToColorRange'), 0.0, max(max(clut)));
 
         % Setup max input value and prescaler:
         glUniform1f(glGetUniformLocation(glsl, 'ICMMaxInputValue'),ICMMaxInputValue);
-        glUniform1f(glGetUniformLocation(glsl, 'ICMPrescale'),ICMPrescale);        
+        glUniform1f(glGetUniformLocation(glsl, 'ICMPrescale'),ICMPrescale);
     catch
         % Empty...
         psychrethrow(psychlasterror);
     end
-    
+
     % Unbind shader:
     glUseProgram(0);
-    
+
     if isempty(icmDataForHandle) || size(icmDataForHandle, 1) < win || size(icmDataForHandle, 2) < glsl || Screen('WindowKind',win) ~= 1
         error('SetLookupTable: Tried to assign clut to a non-onscreen window or one which doesn''t have "LookupTable" based color correction enabled!');
     end
-    
+
     % Convert 'clut' to single(), so it is a float format for OpenGL:
     clut = single(clut);
-    
+
     % Try to encode in highest precision format that the hardware supports:
     winfo = Screen('GetWindowInfo', win);
     if winfo.GLSupportsTexturesUpToBpc >= 32
@@ -1304,7 +1336,7 @@ if strcmpi(cmd, 'SetLookupTable')
                     fprintf('WARNING!PsychColorCorrection: This will likely cause remapping artifacts in color correction!!\n');
                 end
             end
-            
+
             if (winfo.BitsPerColorComponent > 8)
                 if verbosity >= 2
                     fprintf('WARNING!PsychColorCorrection: Your hardware can only handle 8 bit precision color correction in outputrange 0.0 - 1.0,\n');
@@ -1314,14 +1346,14 @@ if strcmpi(cmd, 'SetLookupTable')
             end
         end
     end
-    
+
     if size(clut,1) > glGetIntegerv(GL.MAX_RECTANGLE_TEXTURE_SIZE_ARB)
         error('SetLookupTable: Tried to assign a clut with %i slots. This is more than your graphics hardware can handle! [Maximum is %i slots].', size(clut,1), glGetIntegerv(GL.MAX_RECTANGLE_TEXTURE_SIZE_ARB));
     end
-    
+
     % Bind relevant texture object:
     glBindTexture(GL.TEXTURE_RECTANGLE_EXT, icmDataForHandle(win, glsl));
-    
+
     % Set filters properly: Want nearest neighbour filtering, ie., no filtering
     % at all. We'll do our own linear filtering in the ICM shader. This way
     % we can provide accelerated linear interpolation on all GPU's with all
@@ -1334,7 +1366,7 @@ if strcmpi(cmd, 'SetLookupTable')
     % properly "replicated" to all three color channels in rgb modes:
     glTexParameteri(GL.TEXTURE_RECTANGLE_EXT, GL.TEXTURE_WRAP_S, GL.CLAMP_TO_EDGE);
     glTexParameteri(GL.TEXTURE_RECTANGLE_EXT, GL.TEXTURE_WRAP_T, GL.CLAMP_TO_EDGE);
-    
+
     % Assign lookuptable data to texture:
     glTexImage2D(GL.TEXTURE_RECTANGLE_EXT, 0, internalFormat, size(clut, 1), size(clut, 2), 0, GL.LUMINANCE, GL.FLOAT, clut);
     glBindTexture(GL.TEXTURE_RECTANGLE_EXT, 0);
@@ -1343,13 +1375,168 @@ if strcmpi(cmd, 'SetLookupTable')
     return;
 end
 
+if strcmpi(cmd, 'SetNormalizedLookupTable')
+
+    % Need GL from here on...
+    if isempty(GL)
+        error('SetLookupTable: No internal GL struct defined in "SetLookupTable" routine?!? This is a bug - Check code!!');
+    end
+
+    if nargin < 2
+        error('SetLookupTable: Must provide window handle to onscreen window as 2nd argument!');
+    end
+
+    if nargin < 3
+        error('SetLookupTable: Must provide CLUT matrix for which a color lookup table should be built!');
+    end
+
+    % Fetch window handle:
+    win = varargin{1};
+
+    % Fetch clut:
+    clut = varargin{2};
+
+    if ~isnumeric(clut)
+        error('SetLookupTable: CLUT matrix must contain number(s)!');
+    end
+
+    if size(clut,2)~=1 && size(clut,2)~=3
+        error('SetLookupTable: Encoding CLUT must be a one column luminance vector or three column matrix for the Red, Green and Blue color channel!');
+    end
+
+    if size(clut,1) < 2
+        error('SetLookupTable: Encoding CLUT must have at least 2 rows, or at least 2 elements for a luminance vector!');
+    end
+
+    if nargin < 4
+        viewId = [];
+    else
+        viewId = varargin{3};
+    end
+
+    % Optional max input value provided? Assign most common 1.0 if not:
+    if nargin < 5 || isempty(varargin{4})
+        ICMMaxInputValue = 1.0;
+    else
+        ICMMaxInputValue = varargin{4};
+    end
+
+    % Optional scaling factor provided? Assign proper scaler for clut size,
+    % and max input value if not:
+    if nargin < 6 || isempty(varargin{5})
+        ICMPrescale = ( size(clut,1) -1 ) / ICMMaxInputValue;
+    else
+        ICMPrescale = varargin{5};
+    end
+
+    % Postscaling
+    % defaults to scaling clut to maximum 1
+    if nargin < 7 || isempty(varargin{6})
+        ICMPostscale = max(clut(:));
+    else
+        ICMPostscale = varargin{6};
+    end
+    % scale clut
+    clut = clut ./ ICMPostscale;
+
+    % Retrieve all params for 'win'dow and our 'LookupTable' icmSpec, bind shader.
+    icmId = 'NormalizedLookupTable';
+    [slot shaderid blittercfg voidptr glsl luttexid] = GetSlotForTypeAndBind(win, icmId, viewId); %#ok<NASGU>
+
+    try
+        % Setup initial clamping values to valid range 0.0 - maximum in passed CLUT:
+        glUniform2f(glGetUniformLocation(glsl, 'ICMClampToColorRange'), 0.0, max(max(clut)));
+
+        % Setup max input value prescaler and postscaler:
+        glUniform1f(glGetUniformLocation(glsl, 'ICMMaxInputValue'),ICMMaxInputValue);
+        glUniform1f(glGetUniformLocation(glsl, 'ICMPrescale'),ICMPrescale);
+        glUniform1f(glGetUniformLocation(glsl, 'ICMPostscale'),ICMPostscale);
+    catch
+        % Empty...
+        psychrethrow(psychlasterror);
+    end
+
+    % Unbind shader:
+    glUseProgram(0);
+
+    if isempty(icmDataForHandle) || size(icmDataForHandle, 1) < win || size(icmDataForHandle, 2) < glsl || Screen('WindowKind',win) ~= 1
+        error('SetLookupTable: Tried to assign clut to a non-onscreen window or one which doesn''t have "LookupTable" based color correction enabled!');
+    end
+
+    % Convert 'clut' to single(), so it is a float format for OpenGL:
+    clut = single(clut);
+
+    % Try to encode in highest precision format that the hardware supports:
+    winfo = Screen('GetWindowInfo', win);
+    if winfo.GLSupportsTexturesUpToBpc >= 32
+        % Full 32 bits single precision float:
+        internalFormat = GL.LUMINANCE_FLOAT32_APPLE;
+        if verbosity >= 3, fprintf('PsychColorCorrection: Using a 32 bit float CLUT -> 23 bits effective linear output precision for color correction.\n'); end
+    else
+        % No float32 textures:
+        if (winfo.GLSupportsTexturesUpToBpc >= 16)
+            % Choose 16 bpc float textures:
+            internalFormat = GL.LUMINANCE_FLOAT16_APPLE;
+            if verbosity >= 3, fprintf('PsychColorCorrection: Using a 16 bit float CLUT -> 10 bits effective linear output precision for color correction.\n'); end
+        else
+            % No support for > 8 bpc textures at all and/or no need for
+            % more than 8 bpc precision or range. Choose 8 bpc texture:
+            internalFormat = GL.LUMINANCE;
+            if verbosity >= 3, fprintf('PsychColorCorrection: Using a 8 bit integer CLUT -> 8 bits effective linear output precision for color correction.\n'); end
+
+            % Plain old 8 bits fixed point:
+            if (max(max(clut)) > 1) || (min(min(clut)) < 0)
+                % Ohoh, out of range values for integer texture!
+                if verbosity >= 2
+                    fprintf('\nWARNING!PsychColorCorrection: CLUT contains values greater than 1.0 or negative values, which your hardware can''t handle!!\n');
+                    fprintf('WARNING!PsychColorCorrection: This will likely cause remapping artifacts in color correction!!\n');
+                end
+            end
+
+            if (winfo.BitsPerColorComponent > 8)
+                if verbosity >= 2
+                    fprintf('WARNING!PsychColorCorrection: Your hardware can only handle 8 bit precision color correction in outputrange 0.0 - 1.0,\n');
+                    fprintf('WARNING!PsychColorCorrection: but your framebuffer is configured for more than 8 bit precision. This may cause\n');
+                    fprintf('WARNING!PsychColorCorrection: loss of effective precision in color correction and thereby unwanted artifacts!\n');
+                end
+            end
+        end
+    end
+
+    if size(clut,1) > glGetIntegerv(GL.MAX_RECTANGLE_TEXTURE_SIZE_ARB)
+        error('SetLookupTable: Tried to assign a clut with %i slots. This is more than your graphics hardware can handle! [Maximum is %i slots].', size(clut,1), glGetIntegerv(GL.MAX_RECTANGLE_TEXTURE_SIZE_ARB));
+    end
+
+    % Bind relevant texture object:
+    glBindTexture(GL.TEXTURE_RECTANGLE_EXT, icmDataForHandle(win, glsl));
+
+    % Set filters properly: Want nearest neighbour filtering, ie., no filtering
+    % at all. We'll do our own linear filtering in the ICM shader. This way
+    % we can provide accelerated linear interpolation on all GPU's with all
+    % texture formats, even if GPU's are old:
+    glTexParameteri(GL.TEXTURE_RECTANGLE_EXT, GL.TEXTURE_MIN_FILTER, GL.NEAREST);
+    glTexParameteri(GL.TEXTURE_RECTANGLE_EXT, GL.TEXTURE_MAG_FILTER, GL.NEAREST);
+
+    % Want clamp-to-edge behaviour to saturate at minimum and maximum
+    % intensity value, and to make sure that a pure-luminance 1 row clut is
+    % properly "replicated" to all three color channels in rgb modes:
+    glTexParameteri(GL.TEXTURE_RECTANGLE_EXT, GL.TEXTURE_WRAP_S, GL.CLAMP_TO_EDGE);
+    glTexParameteri(GL.TEXTURE_RECTANGLE_EXT, GL.TEXTURE_WRAP_T, GL.CLAMP_TO_EDGE);
+
+    % Assign lookuptable data to texture:
+    glTexImage2D(GL.TEXTURE_RECTANGLE_EXT, 0, internalFormat, size(clut, 1), size(clut, 2), 0, GL.LUMINANCE, GL.FLOAT, clut);
+    glBindTexture(GL.TEXTURE_RECTANGLE_EXT, 0);
+
+    % Done.
+    return;
+end
 if strcmpi(cmd, 'SetLookupTable3D')
-    
+
     % Need GL from here on...
     if isempty(GL)
         error('SetLookupTable3D: No internal GL struct defined in "SetLookupTable3D" routine?!? This is a bug - Check code!!');
     end
-    
+
     if nargin < 2
         error('SetLookupTable3D: Must provide window handle to onscreen window as 2nd argument!');
     end
@@ -1357,21 +1544,21 @@ if strcmpi(cmd, 'SetLookupTable3D')
     if nargin < 3
         error('SetLookupTable3D: Must provide CLUT 4D matrix for which a 3D color lookup table should be built!');
     end
-    
+
     % Fetch window handle:
     win = varargin{1};
-    
+
     % Fetch clut:
     clut = varargin{2};
-    
+
     if ~isnumeric(clut)
         error('SetLookupTable3D: CLUT matrix must contain number(s)!');
     end
-    
+
     if ndims(clut) ~= 4
         error('SetLookupTable3D: Encoding CLUT must be a 4D matrix with indices (channel, redinput, greeninput, blueinput)!');
     end
-    
+
     if size(clut,1)~=3
         error('SetLookupTable3D: Encoding CLUT must be a 4D matrix whose first dimension has a size of 3 elements for (R,G,B) color triplets!');
     end
@@ -1385,7 +1572,7 @@ if strcmpi(cmd, 'SetLookupTable3D')
     else
         viewId = varargin{3};
     end
-    
+
     % Optional max input value provided? Assign most common 1.0 if not:
     if nargin < 5 || isempty(varargin{4})
         ICMMaxInputValue = 1.0;
@@ -1418,7 +1605,7 @@ if strcmpi(cmd, 'SetLookupTable3D')
     else
         precision = varargin{6};
     end
-    
+
     % Trilinear interpolation switch provided?
     if nargin < 8 || isempty(varargin{7})
         % Default to trilinear interpolation:
@@ -1426,33 +1613,33 @@ if strcmpi(cmd, 'SetLookupTable3D')
     else
         interpolate = varargin{7};
     end
-    
+
     % Retrieve all params for 'win'dow and our 'LookupTable' icmSpec, bind shader.
     icmId = 'LookupTable3D';
     [slot shaderid blittercfg voidptr glsl luttexid] = GetSlotForTypeAndBind(win, icmId, viewId); %#ok<NASGU>
-    
+
     try
         % Setup initial clamping values to valid range 0.0 - maximum in passed CLUT:
         glUniform2f(glGetUniformLocation(glsl, 'ICMClampToColorRange'), 0.0, max(max(max(max(clut)))));
 
         % Setup max input value and prescaler:
         glUniform1f(glGetUniformLocation(glsl, 'ICMMaxInputValue'), ICMMaxInputValue);
-        glUniform1f(glGetUniformLocation(glsl, 'ICMPrescale'), ICMPrescale);        
+        glUniform1f(glGetUniformLocation(glsl, 'ICMPrescale'), ICMPrescale);
     catch
         % Empty...
         psychrethrow(psychlasterror);
     end
-    
+
     % Unbind shader:
     glUseProgram(0);
-    
+
     if isempty(icmDataForHandle) || size(icmDataForHandle, 1) < win || size(icmDataForHandle, 2) < glsl || Screen('WindowKind',win) ~= 1
         error('SetLookupTable3D: Tried to assign clut to a non-onscreen window or one which doesn''t have "LookupTable3D" based color correction enabled!');
     end
-    
+
     % Convert 'clut' to single(), so it is a float format for OpenGL:
     clut = single(clut);
-    
+
     % Try to encode in highest precision format that the hardware supports, but no more than what is requested by usercode:
     winfo = Screen('GetWindowInfo', win);
     if (winfo.GLSupportsTexturesUpToBpc >= 32) && (winfo.GLSupportsFilteringUpToBpc >= 32 || interpolate == 0) && (precision >= 2)
@@ -1480,7 +1667,7 @@ if strcmpi(cmd, 'SetLookupTable3D')
                     fprintf('WARNING!PsychColorCorrection: This will likely cause remapping artifacts in color correction!!\n');
                 end
             end
-            
+
             if (winfo.BitsPerColorComponent > 8)
                 if verbosity >= 2
                     fprintf('WARNING!PsychColorCorrection: Your hardware can only handle 8 bit precision color correction in outputrange 0.0 - 1.0,\n');
@@ -1490,15 +1677,15 @@ if strcmpi(cmd, 'SetLookupTable3D')
             end
         end
     end
-    
+
     max3DSize = glGetIntegerv(GL.MAX_3D_TEXTURE_SIZE);
     if size(clut,2) > max3DSize || size(clut,3) > max3DSize || size(clut,4) > max3DSize
         error('SetLookupTable3D: Tried to assign a clut with (%i,%i,%i) slots. This is more than your graphics hardware can handle! [Maximum is %i slots].', size(clut,2), size(clut,3), size(clut,4), max3DSize);
     end
-    
+
     % Bind relevant texture object:
     glBindTexture(GL.TEXTURE_3D, icmDataForHandle(win, glsl));
-    
+
     % Set filters properly:
     if interpolate > 0
         % We want trilinear filtering:
@@ -1509,26 +1696,26 @@ if strcmpi(cmd, 'SetLookupTable3D')
         glTexParameteri(GL.TEXTURE_3D, GL.TEXTURE_MIN_FILTER, GL.NEAREST);
         glTexParameteri(GL.TEXTURE_3D, GL.TEXTURE_MAG_FILTER, GL.NEAREST);
     end
-    
+
     % Want clamp-to-edge behaviour to saturate at minimum and maximum
     % color values:
     glTexParameteri(GL.TEXTURE_3D, GL.TEXTURE_WRAP_S, GL.CLAMP_TO_EDGE);
     glTexParameteri(GL.TEXTURE_3D, GL.TEXTURE_WRAP_T, GL.CLAMP_TO_EDGE);
     glTexParameteri(GL.TEXTURE_3D, GL.TEXTURE_WRAP_R, GL.CLAMP_TO_EDGE);
-    
+
     % Clear any pending OpenGL errors:
     while glGetError(); end;
-    
+
     % Assign lookuptable data to texture:
     glTexImage3D(GL.TEXTURE_3D, 0, internalFormat, size(clut, 2), size(clut, 3), size(clut, 4), 0, GL.RGB, GL.FLOAT, clut);
-    
+
     % Check and handle errors:
     err = glGetError;
     if err ~= GL.NO_ERROR
         if err == GL.INVALID_VALUE
             % Can only get a invalid_value if power-of-two constraint is
             % violated on a GPU which does not support NPOT textures:
-            error('SetLookupTable3D: LUT creation failed. Most likely cause: Your graphics card requires all 3D-CLUT dimensions to have a number of elements which is a power of two.\n');            
+            error('SetLookupTable3D: LUT creation failed. Most likely cause: Your graphics card requires all 3D-CLUT dimensions to have a number of elements which is a power of two.\n');
         elseif err == GL.OUT_OF_MEMORY
             error('SetLookupTable3D: LUT creation failed. Your graphics card has insufficient free memory to handle a CLUT of this size. Try to reduce CLUT size.');
         else
@@ -1536,7 +1723,7 @@ if strcmpi(cmd, 'SetLookupTable3D')
             error('SetLookupTable3D: OpenGL error during lookup table texture creation: %s\n', gluErrorString(err));
         end
     end
-    
+
     % Done, LUT is ready, unbind:
     glBindTexture(GL.TEXTURE_3D, 0);
 
@@ -1545,12 +1732,12 @@ if strcmpi(cmd, 'SetLookupTable3D')
 end
 
 if strcmpi(cmd, 'SetGainMatrix')
-    
+
     % Need GL from here on...
     if isempty(GL)
         error('SetGainMatrix: No internal GL struct defined in "SetGainMatrix" routine?!? This is a bug - Check code!!');
     end
-    
+
     if nargin < 2
         error('SetGainMatrix: Must provide window handle to onscreen window as 2nd argument!');
     end
@@ -1558,13 +1745,13 @@ if strcmpi(cmd, 'SetGainMatrix')
     if nargin < 3
         error('SetGainMatrix: Must provide 2D gain matrix for use!');
     end
-        
+
     % Fetch window handle:
     win = varargin{1};
-    
+
     % Fetch clut:
     clut = varargin{2};
-    
+
     if ~isnumeric(clut)
         error('SetGainMatrix: Gain matrix must contain number(s)!');
     end
@@ -1579,22 +1766,22 @@ if strcmpi(cmd, 'SetGainMatrix')
     else
         viewId = varargin{3};
     end
-    
+
     if nargin < 5
         precision = [];
     else
         precision = varargin{4};
     end
-    
+
     if isempty(precision)
         % Default precision for gain matrix is 2 == max. precision 32 bpc.
         precision = 2;
     end
-    
+
     % Retrieve all params for 'win'dow and our 'LookupTable' icmSpec, bind shader.
     icmId = 'GainMatrix';
     [slot shaderid blittercfg voidptr glsl luttexid] = GetSlotForTypeAndBind(win, icmId, viewId); %#ok<NASGU>
-    
+
     %     % Not used yet:
     %     try
     %         % Setup initial clamping values to valid range 0.0 - maximum in passed CLUT:
@@ -1603,10 +1790,10 @@ if strcmpi(cmd, 'SetGainMatrix')
     %         % Empty...
     %         psychrethrow(psychlasterror);
     %     end
-    
+
     % Unbind shader:
     glUseProgram(0);
-    
+
     if isempty(icmDataForHandle) || size(icmDataForHandle, 1) < win || size(icmDataForHandle, 2) < glsl || Screen('WindowKind',win) ~= 1
         error('SetGainMatrix: Tried to assign matrix to a non-onscreen window or one which doesn''t have "GainMatrix" based color correction enabled!');
     end
@@ -1624,7 +1811,7 @@ if strcmpi(cmd, 'SetGainMatrix')
     for i=1:size(tclut, 3)
         clut(i,:,:) = tclut(:,:,i);
     end;
-    
+
     % Try to encode in highest precision format that the hardware supports:
     winfo = Screen('GetWindowInfo', win);
     if (winfo.GLSupportsTexturesUpToBpc >= 32) && (precision >= 2)
@@ -1650,21 +1837,21 @@ if strcmpi(cmd, 'SetGainMatrix')
             if ch == 3
                 internalFormat = GL.RGB8;
             end
-            
+
             if verbosity >= 3
                 fprintf('PsychColorCorrection: Using a 8 bit integer matrix -> 8 bits (2 decimal digits) effective linear precision for color correction gain matrix.\n');
                 fprintf('PsychColorCorrection: Gain values will be restricted to range 0.0 - 1.0, with 256 levels, ie. steps of 1/256.\n');
             end
-            
+
             % Plain old 8 bits fixed point:
             if (max(max(max(clut))) > 1) || (min(min(min(clut))) < 0)
                 % Ohoh, out of range values for integer texture!
-                if verbosity >= 2 
+                if verbosity >= 2
                     fprintf('\nWARNING!PsychColorCorrection: Matrix contains values greater than one or negative values, which your hardware can''t handle!!\n');
                     fprintf('WARNING!PsychColorCorrection: This will likely cause remapping artifacts in gain correction!!\n');
                 end
             end
-            
+
             if (winfo.BitsPerColorComponent > 8)
                 if verbosity >= 2
                     fprintf('WARNING!PsychColorCorrection: Your hardware can only handle 8 bit precision gain correction width 256 discrete levels,\n');
@@ -1674,10 +1861,10 @@ if strcmpi(cmd, 'SetGainMatrix')
             end
         end
     end
-    
+
     % Bind relevant texture object:
     glBindTexture(GL.TEXTURE_RECTANGLE_EXT, icmDataForHandle(win, glsl));
-    
+
     % Set filters properly: Want nearest neighbour filtering, ie., no filtering at all:
     glTexParameteri(GL.TEXTURE_RECTANGLE_EXT, GL.TEXTURE_MIN_FILTER, GL.NEAREST);
     glTexParameteri(GL.TEXTURE_RECTANGLE_EXT, GL.TEXTURE_MAG_FILTER, GL.NEAREST);
@@ -1685,7 +1872,7 @@ if strcmpi(cmd, 'SetGainMatrix')
     % Want clamp-to-edge behaviour to saturate at minimum and maximum gain value:
     glTexParameteri(GL.TEXTURE_RECTANGLE_EXT, GL.TEXTURE_WRAP_S, GL.CLAMP_TO_EDGE);
     glTexParameteri(GL.TEXTURE_RECTANGLE_EXT, GL.TEXTURE_WRAP_T, GL.CLAMP_TO_EDGE);
-    
+
     % Assign 2D matrix data to texture:
     if ch == 3
         glTexImage2D(GL.TEXTURE_RECTANGLE_EXT, 0, internalFormat, size(clut, 2), size(clut, 3), 0, GL.RGB, GL.FLOAT, clut);
@@ -1705,53 +1892,53 @@ error('Unknown subfunction specified. Typo?!? Read the help.');
 
 function [slot shaderid blittercfg voidptr glsl luttexid] = GetSlotForTypeAndBind(win, icmId, viewId)
 
-    % Fetch slot, and GLSL handle to relevant imaging slot and shader:
-    if isempty(viewId)
-        viewId = 'AllViews';
-    end 
-    
-    % MK Resolved 26.4.2010: FIXME: HACK FOR BUG IN IMG PIPE!! 
-    if strcmpi(viewId, 'AllViews') || strcmpi(viewId, 'FinalFormatting')
+% Fetch slot, and GLSL handle to relevant imaging slot and shader:
+if isempty(viewId)
+    viewId = 'AllViews';
+end
+
+% MK Resolved 26.4.2010: FIXME: HACK FOR BUG IN IMG PIPE!!
+if strcmpi(viewId, 'AllViews') || strcmpi(viewId, 'FinalFormatting')
     %if strcmpi(viewId, 'FinalFormatting')
-        chain = 'FinalOutputFormattingBlit';
-    end
-    
-    % MK Resolved 26.4.2010: FIXME: HACK FOR BUG IN IMG PIPE!! if strcmpi(viewId, 'LeftView')
-    if strcmpi(viewId, 'LeftView') %|| strcmpi(viewId, 'AllViews')
-        chain = 'StereoLeftCompositingBlit';
+    chain = 'FinalOutputFormattingBlit';
+end
+
+% MK Resolved 26.4.2010: FIXME: HACK FOR BUG IN IMG PIPE!! if strcmpi(viewId, 'LeftView')
+if strcmpi(viewId, 'LeftView') %|| strcmpi(viewId, 'AllViews')
+    chain = 'StereoLeftCompositingBlit';
+end
+
+if strcmpi(viewId, 'RightView')
+    chain = 'StereoRightCompositingBlit';
+end
+
+if strcmpi(icmId, 'ClampedNoName')
+    icmIdString = sprintf('CMIH:ClampedNoName');
+else
+    icmIdString = sprintf('ICM:%s', icmId);
+end
+
+[slot shaderid blittercfg voidptr glsl luttexid] = Screen('HookFunction', win, 'Query', chain, icmIdString);
+
+% Shader found?
+if slot == -1
+    % MK Resolved 26.4.2010: Doesn't hurt here. FIXME: HACK FOR BUG IN IMG PIPE!!
+    if strcmpi(viewId, 'AllViews')
+        % Special case 'AllViews': We searched 'LeftView' and failed.
+        % Let's retry with 'FinalFormatting' view before we give up:
+        [slot shaderid blittercfg voidptr glsl luttexid] = GetSlotForTypeAndBind(win, icmId, 'FinalFormatting');
+        % If we make it to this point then our search was successfull:
+        return;
     end
 
-    if strcmpi(viewId, 'RightView')
-        chain = 'StereoRightCompositingBlit';
-    end
+    fprintf('PsychColorCorrection: Error: Failed to find plugin while searching chain: %s, searched icmIdString: %s\n', chain, icmIdString);
+    error('Could not find shader plugin for color correction inside imaging pipeline for window and view! Is color correction really enabled for this window and view channel?!?');
+end
 
-    if strcmpi(icmId, 'ClampedNoName')
-        icmIdString = sprintf('CMIH:ClampedNoName');
-    else
-        icmIdString = sprintf('ICM:%s', icmId);
-    end
-    
-    [slot shaderid blittercfg voidptr glsl luttexid] = Screen('HookFunction', win, 'Query', chain, icmIdString);
+if glsl == 0
+    error('Color correction shader is not operational for unknown reason, maybe a Psychtoolbox bug? Sorry...');
+end
 
-    % Shader found?
-    if slot == -1
-        % MK Resolved 26.4.2010: Doesn't hurt here. FIXME: HACK FOR BUG IN IMG PIPE!!
-        if strcmpi(viewId, 'AllViews')
-            % Special case 'AllViews': We searched 'LeftView' and failed.
-            % Let's retry with 'FinalFormatting' view before we give up:
-            [slot shaderid blittercfg voidptr glsl luttexid] = GetSlotForTypeAndBind(win, icmId, 'FinalFormatting');
-            % If we make it to this point then our search was successfull:
-            return;
-        end
-        
-        fprintf('PsychColorCorrection: Error: Failed to find plugin while searching chain: %s, searched icmIdString: %s\n', chain, icmIdString);
-        error('Could not find shader plugin for color correction inside imaging pipeline for window and view! Is color correction really enabled for this window and view channel?!?');
-    end
-    
-    if glsl == 0
-        error('Color correction shader is not operational for unknown reason, maybe a Psychtoolbox bug? Sorry...');
-    end
-    
-    % Bind it:
-    glUseProgram(glsl);
+% Bind it:
+glUseProgram(glsl);
 return;
