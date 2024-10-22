@@ -1433,12 +1433,15 @@ if strcmpi(cmd, 'SetNormalizedLookupTable')
     % defaults to scaling clut to maximum 1
     if nargin < 7 || isempty(varargin{6})
         ICMPostscale = max(clut(:));
+        % scale clut
+        clut_max = ICMPostscale;
+        clut = clut ./ ICMPostscale;
     else
+        % assume you did the ormalization yourself, clut remains the same
         ICMPostscale = varargin{6};
+        % maximum output then is the max ofthe clut * Postscale
+        clut_max = ICMPostscale * max(clut(:));
     end
-    % scale clut
-    clut_max = max(max(clut));
-    clut = clut ./ ICMPostscale;
 
     % Retrieve all params for 'win'dow and our 'LookupTable' icmSpec, bind shader.
     icmId = 'NormalizedLookupTable';
