@@ -9,9 +9,8 @@
  * (w)2009 by Mario Kleiner. Licensed under MIT license.
 */
 
-#extension GL_ARB_texture_rectangle : enable
 
-uniform sampler2DRect   ICMCLUT;
+uniform sampler1D       ICMCLUT;
 uniform float           ICMPrescale;
 uniform float           ICMPostscale;
 uniform float           ICMMaxInputValue;
@@ -22,7 +21,6 @@ uniform vec2            ICMClampToColorRange;
 vec4 icmTransformColor(vec4 incolor)
 {
     vec4 outcolor;
-    vec3 lutcolor1, lutcolor2, incolor1, incolor2;
 
     /* Return alpha component unmodified: */
     outcolor.a = incolor.a;
@@ -34,9 +32,9 @@ vec4 icmTransformColor(vec4 incolor)
     incolor.rgb = incolor.rgb * ICMPrescale;
 
     /* Lookup values for each channel in rows of texture: */
-    outcolor.r  = texture2DRect(ICMCLUT, vec2(incolor.r, 0.5)).r;
-    outcolor.g  = texture2DRect(ICMCLUT, vec2(incolor.g, 1.5)).r;
-    outcolor.b  = texture2DRect(ICMCLUT, vec2(incolor.b, 2.5)).r;
+    outcolor.r  = texture1D(ICMCLUT, incolor.r).r;
+    outcolor.g  = texture1D(ICMCLUT, incolor.g).g;
+    outcolor.b  = texture1D(ICMCLUT, incolor.b).b;
 
     outcolor.rgb = ICMPostscale * outcolor.rgb;
 
@@ -50,20 +48,15 @@ vec4 icmTransformColor(vec4 incolor)
 float icmTransformColor1(float incolor)
 {
     float outcolor;
-    float lutcolor1, lutcolor2, incolor1, incolor2;
 
     /* Clamp input to valid 0-ICMMaxInputValue range: */
     incolor = clamp(incolor, 0.0, ICMMaxInputValue);
 
     /* Remap them to index in resolution range: */
     incolor = incolor * ICMPrescale;
-    incolor1 = floor(incolor) + 0.5;
-    incolor2 = incolor1 + 1.0;
 
     /* Lookup values for each channel in rows of texture: */
-    lutcolor1 = texture2DRect(ICMCLUT, vec2(incolor1, 0.5)).r;
-    lutcolor2 = texture2DRect(ICMCLUT, vec2(incolor2, 0.5)).r;
-    outcolor  = mix(lutcolor1, lutcolor2, fract(incolor));
+    outcolor = texture1D(ICMCLUT, incolor).r;
 
     /* Clamp outcolor to range given by ICMClampToColorRange: */
     outcolor = clamp(outcolor, ICMClampToColorRange[0], ICMClampToColorRange[1]);

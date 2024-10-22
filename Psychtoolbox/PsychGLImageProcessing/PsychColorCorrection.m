@@ -615,7 +615,7 @@ if strcmpi(cmd, 'GetCompiledShaders')
             icmSpec.icmlutid = glGenTextures(1);
 
             % Build config string to bind and use our CLUT texture:
-            icmConfig = sprintf('TEXTURERECT2D(2)=%i', icmSpec.icmlutid);
+            icmConfig = sprintf('TEXTURE1D(2)=%i', icmSpec.icmlutid);
 
             % Color correction by indexing into 3D texture lookup table:
         case {'LookupTable3D'}
@@ -1424,7 +1424,7 @@ if strcmpi(cmd, 'SetNormalizedLookupTable')
     % Optional scaling factor provided? Assign proper scaler for clut size,
     % and max input value if not:
     if nargin < 6 || isempty(varargin{5})
-        ICMPrescale = ( size(clut,1) -1 ) / ICMMaxInputValue;
+        ICMPrescale = 1.0 / ICMMaxInputValue; % ( size(clut,1) -1 )
     else
         ICMPrescale = varargin{5};
     end
@@ -1471,18 +1471,18 @@ if strcmpi(cmd, 'SetNormalizedLookupTable')
     winfo = Screen('GetWindowInfo', win);
     if winfo.GLSupportsTexturesUpToBpc >= 32
         % Full 32 bits single precision float:
-        internalFormat = GL.LUMINANCE32F_ARB;
+        internalFormat = GL.RGB32F;
         if verbosity >= 3, fprintf('PsychColorCorrection: Using a 32 bit float CLUT -> 23 bits effective linear output precision for color correction.\n'); end
     else
         % No float32 textures:
         if (winfo.GLSupportsTexturesUpToBpc >= 16)
             % Choose 16 bpc float textures:
-            internalFormat = GL.LUMINANCE_FLOAT16_APPLE;
+            internalFormat = GL.RGB16F;
             if verbosity >= 3, fprintf('PsychColorCorrection: Using a 16 bit float CLUT -> 10 bits effective linear output precision for color correction.\n'); end
         else
             % No support for > 8 bpc textures at all and/or no need for
             % more than 8 bpc precision or range. Choose 8 bpc texture:
-            internalFormat = GL.LUMINANCE;
+            internalFormat = GL.RGB;
             if verbosity >= 3, fprintf('PsychColorCorrection: Using a 8 bit integer CLUT -> 8 bits effective linear output precision for color correction.\n'); end
 
             % Plain old 8 bits fixed point:
@@ -1503,30 +1503,33 @@ if strcmpi(cmd, 'SetNormalizedLookupTable')
             end
         end
     end
-
-    if size(clut,1) > glGetIntegerv(GL.MAX_RECTANGLE_TEXTURE_SIZE_ARB)
+    
+    if size(clut, 2) == 1
+        clut = repmat(clut, 1, 3);
+    end
+    if size(clut,1) > glGetIntegerv(GL.MAX_TEXTURE_SIZE)
         error('SetLookupTable: Tried to assign a clut with %i slots. This is more than your graphics hardware can handle! [Maximum is %i slots].', size(clut,1), glGetIntegerv(GL.MAX_RECTANGLE_TEXTURE_SIZE_ARB));
     end
 
     % Bind relevant texture object:
-    glBindTexture(GL.TEXTURE_RECTANGLE_EXT, icmDataForHandle(win, glsl));
+    glBindTexture(GL.TEXTURE_1D, icmDataForHandle(win, glsl));
 
     % Set filters properly: Want nearest neighbour filtering, ie., no filtering
     % at all. We'll do our own linear filtering in the ICM shader. This way
     % we can provide accelerated linear interpolation on all GPU's with all
     % texture formats, even if GPU's are old:
-    glTexParameteri(GL.TEXTURE_RECTANGLE_EXT, GL.TEXTURE_MIN_FILTER, GL.LINEAR);
-    glTexParameteri(GL.TEXTURE_RECTANGLE_EXT, GL.TEXTURE_MAG_FILTER, GL.LINEAR);
+    glTexParameteri(GL.TEXTURE_1D, GL.TEXTURE_MIN_FILTER, GL.LINEAR);
+    glTexParameteri(GL.TEXTURE_1D, GL.TEXTURE_MAG_FILTER, GL.LINEAR);
 
     % Want clamp-to-edge behaviour to saturate at minimum and maximum
     % intensity value, and to make sure that a pure-luminance 1 row clut is
     % properly "replicated" to all three color channels in rgb modes:
-    glTexParameteri(GL.TEXTURE_RECTANGLE_EXT, GL.TEXTURE_WRAP_S, GL.CLAMP_TO_EDGE);
-    glTexParameteri(GL.TEXTURE_RECTANGLE_EXT, GL.TEXTURE_WRAP_T, GL.CLAMP_TO_EDGE);
+    glTexParameteri(GL.TEXTURE_1D, GL.TEXTURE_WRAP_S, GL.CLAMP_TO_EDGE);
+    glTexParameteri(GL.TEXTURE_1D, GL.TEXTURE_WRAP_T, GL.CLAMP_TO_EDGE);
 
     % Assign lookuptable data to texture:
-    glTexImage2D(GL.TEXTURE_RECTANGLE_EXT, 0, internalFormat, size(clut, 1), size(clut, 2), 0, GL.LUMINANCE, GL.FLOAT, clut);
-    glBindTexture(GL.TEXTURE_RECTANGLE_EXT, 0);
+    glTexImage1D(GL.TEXTURE_1D, 0, internalFormat, size(clut, 1), 0, GL.RGB, GL.FLOAT, clut');
+    glBindTexture(GL.TEXTURE_1D, 0);
 
     % Done.
     return;
